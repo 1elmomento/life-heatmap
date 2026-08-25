@@ -63,3 +63,7 @@ Everything here is Tehran-flavored by default (`TEHRAN_CENTER` in `heatmap.py`),
 ## Requirements
 
 Python 3.10+, and the packages in `requirements.txt` (Flask, pandas, numpy, folium, matplotlib, geopy).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
