@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tehran Life Heatmap — Collector</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --ink: #2b2622;
+    --paper: #fffaf3;
+    --panel: #ffffff;
+    --border: #e8ded0;
+    --accent: #d7301f;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); }
+  #app { display: flex; height: 100vh; }
+
+  #sidebar {
+    width: 320px;
+    min-width: 320px;
+    background: var(--paper);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #sidebar header { padding: 18px 18px 10px; border-bottom: 1px solid var(--border); }
+  #sidebar header h1 { font-size: 17px; margin: 0 0 4px; }
+  #sidebar header p { font-size: 12.5px; color: #7a7266; margin: 0; line-height: 1.4; }
+
+  #loc-list { flex: 1; overflow-y: auto; padding: 8px 10px; }
+  .loc-card {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .loc-card:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,.07); }
+  .loc-info { flex: 1; min-width: 0; }
+  .loc-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .loc-meta { font-size: 11.5px; color: #8a8072; margin-top: 2px; }
+  .loc-del { border: none; background: none; color: #b7ab99; cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  .loc-del:hover { color: var(--accent); }
+  #empty-hint { padding: 24px 14px; color: #a89d8c; font-size: 13px; text-align: center; }
+
+  #generate-bar { padding: 14px; border-top: 1px solid var(--border); }
+  #generate-btn {
+    width: 100%; padding: 12px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, #ef6a3c, #d7301f); color: white;
+    font-size: 14.5px; font-weight: 700; cursor: pointer; letter-spacing: .2px;
+  }
+  #generate-btn:disabled { opacity: .6; cursor: default; }
+  #generate-status { font-size: 12px; color: #8a8072; margin-top: 8px; min-height: 16px; }
+  #generate-status a { color: var(--accent); }
+
+  #map { flex: 1; position: relative; }
+
+  #hint-banner {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(43,38,34,.88); color: #fff; padding: 8px 16px; border-radius: 20px;
+    font-size: 12.5px; z-index: 1000; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+    pointer-events: none;
+  }
+
+  #form-panel {
+    position: absolute; z-index: 1100; width: 300px;
+    background: var(--panel); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.18);
+    border: 1px solid var(--border); padding: 16px; display: none;
+  }
+  #form-panel h3 { margin: 0 0 10px; font-size: 14px; }
+  #form-panel label { display: block; font-size: 11.5px; color: #8a8072; margin: 10px 0 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
+  #form-panel input[type=text], #form-panel input[type=number], #form-panel textarea {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; font-family: inherit;
+  }
+  #form-panel textarea { resize: vertical; min-height: 40px; }
+
+  .cat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .cat-btn {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 9px; border-radius: 8px; border: 1.5px solid var(--border);
+    background: #fff; cursor: pointer; font-size: 12px; text-align: left;
+  }
+  .cat-btn .swatch { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--cat-color); }
+  .cat-btn.active { border-color: var(--cat-color); background: color-mix(in srgb, var(--cat-color) 14%, white); }
+
+  .dur-row { display: flex; gap: 6px; }
+  .dur-row input { flex: 1.2; }
+  .dur-row select { flex: 1; border-radius: 7px; border: 1px solid var(--border); font-size: 13px; }
+
+  #preview-readout {
+    margin-top: 10px; padding: 8px 10px; background: #f7f3ec; border-radius: 8px;
+    font-size: 11.5px; color: #5c5548; line-height: 1.5;
+  }
+  #preview-readout b { color: var(--ink); }
+
+  .addr-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+  #addr-btn { border: 1px solid var(--border); background: #fff; border-radius: 7px; font-size: 11px; padding: 5px 8px; cursor: pointer; white-space: nowrap; }
+  #addr-text { font-size: 11.5px; color: #8a8072; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .form-actions { display: flex; gap: 8px; margin-top: 14px; }
+  #save-btn { flex: 1; padding: 9px; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; }
+  #cancel-btn { padding: 9px 12px; border: none; border-radius: 8px; background: #f1efec; color: #6b6355; font-size: 13px; cursor: pointer; }
+  #form-error { color: var(--accent); font-size: 11.5px; margin-top: 6px; min-height: 14px; }
+
+  .cat-marker {
+    width: 20px; height: 20px; border-radius: 50%; box-sizing: border-box;
+    border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; font-weight: 700; font-family: inherit;
+  }
+  .loc-badge {
+    width: 20px; height: 20px; border-radius: 50%; flex: none; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <header>
+      <h1>Tehran Life Heatmap</h1>
+      <p>Click anywhere on the map to drop a place you've lived, frequented, traveled to, visited, or stopped by. The glow radius is calculated for you.</p>
+    </header>
+    <div id="loc-list"></div>
+    <div id="generate-bar">
+      <button id="generate-btn">Generate Heatmap</button>
+      <div id="generate-status"></div>
+    </div>
+  </div>
+  <div id="map">
+    <div id="hint-banner">Click the map to add a place</div>
+
+    <div id="form-panel">
+      <h3>New place</h3>
+      <label>Name</label>
+      <input type="text" id="f-name" placeholder="e.g. Grandma's house">
+
+      <label>How do you know it?</label>
+      <div class="cat-row" id="cat-row"></div>
+
+      <label>Total time there</label>
+      <div class="dur-row">
+        <input type="number" id="f-duration" min="0" step="any" placeholder="e.g. 3">
+        <select id="f-unit">
+          <option value="hours">hours</option>
+          <option value="days">days</option>
+          <option value="months">months</option>
+          <option value="years" selected>years</option>
+        </select>
+      </div>
+
+      <div class="addr-row">
+        <button id="addr-btn" type="button">Look up address</button>
+        <span id="addr-text"></span>
+      </div>
+
+      <label>Notes <span style="text-transform:none;font-weight:400;">(optional)</span></label>
+      <textarea id="f-notes" placeholder="anything worth remembering"></textarea>
+
+      <div id="preview-readout">Pick a category and duration to see the familiarity radius.</div>
+      <div id="form-error"></div>
+
+      <div class="form-actions">
+        <button id="save-btn">Save place</button>
+        <button id="cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const CENTER = [{{ center_lat }}, {{ center_lon }}];
+const CATEGORY_LIST = {{ categories | tojson }};  // [[name, color], ...] in the backend's own order
+const CAT_COLOR = Object.fromEntries(CATEGORY_LIST);
+const CATEGORIES = CATEGORY_LIST.map(([name]) => name);
+
+function labelFor(cat) {
+  return cat.charAt(0).toUpperCase() + cat.slice(1);
+}
+function letterFor(cat) {
+  return cat.charAt(0).toUpperCase();
+}
+
+// Build the category picker from the same category list the backend uses,
+// so adding a category only ever means editing heatmap.py.
+const catRow = document.getElementById('cat-row');
+CATEGORIES.forEach(cat => {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cat-btn';
+  btn.dataset.cat = cat;
+  btn.style.setProperty('--cat-color', CAT_COLOR[cat]);
+  btn.innerHTML = `<span class="swatch"></span>${labelFor(cat)}`;
+  catRow.appendChild(btn);
+});
+
+const map = L.map('map', { zoomControl: true }).setView(CENTER, 12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO',
+  subdomains: 'abcd', maxZoom: 19,
+}).addTo(map);
+
+let markersLayer = L.layerGroup().addTo(map);
+let heatOverlay = null;
+let previewCircle = null;
+let previewMarker = null;
+let pendingLatLng = null;
+let locations = [];
+
+function categoryIcon(cat) {
+  const color = CAT_COLOR[cat] || '#999';
+  const letter = cat ? letterFor(cat) : '';
+  return L.divIcon({ className: '', html: `<div class="cat-marker" style="background:${color}">${letter}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
+}
+
+function fmtDuration(loc) {
+  const v = loc.duration_value % 1 === 0 ? loc.duration_value.toFixed(0) : loc.duration_value;
+  return `${v} ${loc.duration_unit}`;
+}
+
+function redrawMarkers() {
+  markersLayer.clearLayers();
+  locations.forEach(loc => {
+    L.circle([loc.lat, loc.lon], {
+      radius: loc.sigma_m, color: CAT_COLOR[loc.category], weight: 1,
+      fillColor: CAT_COLOR[loc.category], fillOpacity: 0.12, opacity: 0.55,
+    }).addTo(markersLayer);
+    L.marker([loc.lat, loc.lon], { icon: categoryIcon(loc.category) })
+      .bindPopup(`<b>${escapeHtml(loc.name)}</b><br>${labelFor(loc.category)} — ${fmtDuration(loc)}<br><span style="color:#888">radius ≈ ${loc.sigma_m} m</span>`)
+      .addTo(markersLayer);
+  });
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderSidebar() {
+  const list = document.getElementById('loc-list');
+  if (locations.length === 0) {
+    list.innerHTML = '<div id="empty-hint">No places yet — click the map to add your first one.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  locations.forEach(loc => {
+    const card = document.createElement('div');
+    card.className = 'loc-card';
+    card.innerHTML = `
+      <div class="loc-badge" style="background:${CAT_COLOR[loc.category] || '#999'}">${letterFor(loc.category || '?')}</div>
+      <div class="loc-info">
+        <div class="loc-name">${escapeHtml(loc.name)}</div>
+        <div class="loc-meta">${loc.category} · ${fmtDuration(loc)} · ~${loc.sigma_m} m</div>
+      </div>
+      <button class="loc-del" title="Delete">✕</button>`;
+    card.addEventListener('click', (e) => {
+      if (e.target.classList.contains('loc-del')) return;
+      map.flyTo([loc.lat, loc.lon], 15, { duration: 0.6 });
+    });
+    card.querySelector('.loc-del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await fetch(`/api/locations/${loc.id}`, { method: 'DELETE' });
+      await refreshLocations();
+    });
+    list.appendChild(card);
+  });
+}
+
+async function refreshLocations() {
+  const res = await fetch('/api/locations');
+  locations = await res.json();
+  redrawMarkers();
+  renderSidebar();
+}
+
+// ---- Add-place form ----
+const panel = document.getElementById('form-panel');
+const hintBanner = document.getElementById('hint-banner');
+let selectedCat = null;
+
+// The panel lives inside the map container (needed so its absolute
+// positioning lines up with map click coordinates), so without this,
+// clicks on its buttons/inputs bubble up and register as map clicks too.
+L.DomEvent.disableClickPropagation(panel);
+L.DomEvent.disableScrollPropagation(panel);
+
+map.on('click', (e) => {
+  pendingLatLng = e.latlng;
+  openForm(e.containerPoint);
+});
+
+function openForm(point) {
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-duration').value = '';
+  document.getElementById('f-unit').value = 'years';
+  document.getElementById('f-notes').value = '';
+  document.getElementById('addr-text').textContent = '';
+  document.getElementById('form-error').textContent = '';
+  selectedCat = null;
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+  updatePreviewReadout(null);
+  clearPreviewShape();
+  if (previewMarker) { map.removeLayer(previewMarker); previewMarker = null; }
+
+  panel.style.display = 'block';
+  const mapEl = document.getElementById('map');
+  const maxLeft = mapEl.clientWidth - panel.offsetWidth - 20;
+  const maxTop = mapEl.clientHeight - panel.offsetHeight - 20;
+  panel.style.left = Math.max(10, Math.min(point.x + 16, maxLeft)) + 'px';
+  panel.style.top = Math.max(10, Math.min(point.y - 20, maxTop)) + 'px';
+  hintBanner.style.display = 'none';
+
+  previewMarker = L.marker(pendingLatLng, { icon: categoryIcon(null), opacity: 0.9 }).addTo(map);
+}
+
+function closeForm() {
+  panel.style.display = 'none';
+  hintBanner.style.display = 'block';
+  clearPreviewShape();
+  if (previewMarker) { map.removeLayer(previewMarker); previewMarker = null; }
+  pendingLatLng = null;
+}
+
+function clearPreviewShape() {
+  if (previewCircle) { map.removeLayer(previewCircle); previewCircle = null; }
+}
+
+document.querySelectorAll('.cat-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedCat = btn.dataset.cat;
+    if (previewMarker) previewMarker.setIcon(categoryIcon(selectedCat));
+    updateLivePreview();
+  });
+});
+document.getElementById('f-duration').addEventListener('input', debounce(updateLivePreview, 150));
+document.getElementById('f-unit').addEventListener('change', updateLivePreview);
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+async function updateLivePreview() {
+  const duration = parseFloat(document.getElementById('f-duration').value);
+  const unit = document.getElementById('f-unit').value;
+  if (!selectedCat || !duration || duration <= 0) {
+    updatePreviewReadout(null);
+    clearPreviewShape();
+    return;
+  }
+  const res = await fetch('/api/preview', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: selectedCat, duration_value: duration, duration_unit: unit }),
+  });
+  if (!res.ok) return;
+  const data = await res.json();
+  updatePreviewReadout(data);
+
+  clearPreviewShape();
+  if (pendingLatLng) {
+    previewCircle = L.circle(pendingLatLng, {
+      radius: data.sigma_m, color: CAT_COLOR[selectedCat], weight: 1.5, dashArray: '4 4',
+      fillColor: CAT_COLOR[selectedCat], fillOpacity: 0.15 + 0.35 * data.intensity,
+    }).addTo(map);
+  }
+}
+
+function updatePreviewReadout(data) {
+  const el = document.getElementById('preview-readout');
+  if (!data) {
+    el.innerHTML = 'Pick a category and duration to see the familiarity radius.';
+    return;
+  }
+  el.innerHTML = `Familiarity radius ≈ <b>${data.sigma_m} m</b> &nbsp;·&nbsp; strength <b>${Math.round(data.intensity * 100)}%</b>`;
+}
+
+document.getElementById('addr-btn').addEventListener('click', async () => {
+  if (!pendingLatLng) return;
+  const btn = document.getElementById('addr-btn');
+  btn.textContent = '…';
+  try {
+    const res = await fetch(`/api/reverse_geocode?lat=${pendingLatLng.lat}&lon=${pendingLatLng.lng}`);
+    const data = await res.json();
+    document.getElementById('addr-text').textContent = data.address || '(not found)';
+  } finally {
+    btn.textContent = 'Look up address';
+  }
+});
+
+document.getElementById('cancel-btn').addEventListener('click', closeForm);
+
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const errEl = document.getElementById('form-error');
+  const name = document.getElementById('f-name').value.trim();
+  const duration = parseFloat(document.getElementById('f-duration').value);
+  const unit = document.getElementById('f-unit').value;
+  if (!name) { errEl.textContent = 'Give it a name.'; return; }
+  if (!selectedCat) { errEl.textContent = 'Pick a category.'; return; }
+  if (!duration || duration <= 0) { errEl.textContent = 'How long were you there?'; return; }
+  if (!pendingLatLng) { errEl.textContent = 'Click a spot on the map first.'; return; }
+
+  const body = {
+    name, category: selectedCat, duration_value: duration, duration_unit: unit,
+    lat: pendingLatLng.lat, lon: pendingLatLng.lng,
+    address: document.getElementById('addr-text').textContent || '',
+    notes: document.getElementById('f-notes').value.trim(),
+  };
+  const res = await fetch('/api/locations', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    errEl.textContent = err.error || 'Could not save.';
+    return;
+  }
+  closeForm();
+  await refreshLocations();
+});
+
+// ---- Generate heatmap ----
+document.getElementById('generate-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('generate-btn');
+  const status = document.getElementById('generate-status');
+  btn.disabled = true;
+  status.textContent = 'Crunching the gradients…';
+  try {
+    const res = await fetch('/api/generate', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.error || 'Failed to generate.'; return; }
+
+    if (heatOverlay) map.removeLayer(heatOverlay);
+    heatOverlay = L.imageOverlay(data.image_url, data.bounds, { opacity: 0.92 }).addTo(map);
+    status.innerHTML = `Updated! <a href="${data.html_url}" target="_blank">Open full map ↗</a>`;
+  } catch (e) {
+    status.textContent = 'Something went wrong.';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+refreshLocations();
+</script>
+</body>
+</html>

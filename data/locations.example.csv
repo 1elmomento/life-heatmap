@@ -1,0 +1,6 @@
+name,address,lat,lon,category,duration_value,duration_unit,notes
+Sample childhood home,"Tajrish, Tehran, Iran",35.804937,51.4409634,lived,12,years,Replace this file's contents with your own places
+Sample university,"Amirabad, Tehran, Iran",35.7298,51.3919,frequented,4,years,Attended classes here without living nearby
+Sample family visit,"Narmak, Tehran, Iran",35.7363694,51.5041892,visited,10,years,Weekly visits over many years
+Sample weekend trip,"Karaj, Alborz, Iran",35.8400,50.9391,traveled,5,days,A short trip outside your routine
+Sample one-off stop,"Milad Tower, Tehran, Iran",35.7447016,51.3752738,guest,2,hours,A single short visit

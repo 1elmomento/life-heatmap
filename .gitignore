@@ -1,0 +1,15 @@
+# Personal data -- your real places live here, never committed.
+# (data/locations.example.csv is intentionally NOT ignored -- it's synthetic.)
+data/locations.csv
+
+# Generated maps/images -- derived from your personal data.
+output/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# OS / editor cruft
+.DS_Store
+*.swp
