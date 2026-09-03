@@ -1,4 +1,4 @@
-# Tehran Life Heatmap
+# City Life Heatmap
 
 A personal familiarity map: click places you've lived, frequented, traveled to, visited, or briefly stopped by, and get back a heatmap where each spot glows with a radius and intensity scaled to how well you actually know it.
 
