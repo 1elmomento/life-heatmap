@@ -199,9 +199,13 @@ CATEGORIES.forEach(cat => {
 });
 
 const map = L.map('map', { zoomControl: true }).setView(CENTER, 12);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap &copy; CARTO',
-  subdomains: 'abcd', maxZoom: 19,
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+  maxZoom: 16,
+}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri',
+  maxZoom: 16,
 }).addTo(map);
 
 let markersLayer = L.layerGroup().addTo(map);

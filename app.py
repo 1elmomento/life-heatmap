@@ -13,7 +13,7 @@ Then open http://127.0.0.1:5000
 from pathlib import Path
 
 import pandas as pd
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
 from geopy.geocoders import Nominatim
 
 import heatmap as hm
@@ -151,6 +151,31 @@ def generate():
         "bounds": [[south, west], [north, east]],
         "html_url": f"/output/{html_path.name}",
     })
+
+
+@app.get("/api/share_image")
+def share_image():
+    df = load_df()
+    df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+    df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+    df = df.dropna(subset=["lat", "lon"])
+    if df.empty:
+        return jsonify({"error": "no locations yet"}), 400
+
+    df = hm.compute_weights(df)
+    intensity_grid, bounds = hm.build_density_grid(df)
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    overlay_path = OUTPUT_DIR / "tehran_life_heatmap.png"
+    hm.render_overlay_png(intensity_grid, overlay_path)
+
+    share_path = OUTPUT_DIR / "tehran_life_heatmap_share.png"
+    try:
+        hm.render_share_image(df, bounds, overlay_path, share_path)
+    except Exception as exc:
+        return jsonify({"error": f"could not render share image ({exc})"}), 502
+
+    return send_file(share_path, mimetype="image/png", as_attachment=True,
+                      download_name="tehran_life_heatmap_share.png")
 
 
 @app.get("/output/<path:filename>")

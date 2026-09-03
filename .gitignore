@@ -5,6 +5,9 @@ data/locations.csv
 # Generated maps/images -- derived from your personal data.
 output/
 
+# Cached basemap tiles for the shareable-image export (see heatmap.py).
+.tile_cache/
+
 # Python
 .venv/
 __pycache__/

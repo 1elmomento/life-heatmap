@@ -22,6 +22,10 @@ These ranges are an informed heuristic (grounded in pedestrian-catchment/"pedshe
 
 ## Getting started
 
+Requires **Python 3.10+**. Pick your OS below.
+
+### Linux / macOS
+
 ```bash
 git clone <this-repo-url>
 cd life-heatmap
@@ -30,7 +34,21 @@ python3 -m venv .venv
 ./.venv/bin/python app.py
 ```
 
-Open **http://127.0.0.1:5000**, click anywhere on the map, pick a category and how long you were there, and save. A live dashed circle previews the exact radius before you commit. Hit **Generate Heatmap** any time to render the current glow over the map, or open the full standalone version it links to.
+### Windows (PowerShell or cmd)
+
+```powershell
+git clone <this-repo-url>
+cd life-heatmap
+py -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python app.py
+```
+
+(If `py` isn't found, use `python` instead — depends on how Python was installed.)
+
+Either way, open **http://127.0.0.1:5000**, click anywhere on the map, pick a category and how long you were there, and save. A live dashed circle previews the exact radius before you commit. Hit **Generate Heatmap** any time to render the current glow over the map, or open the full standalone version it links to.
+
+The basemap (streets, place labels) is served live by Esri's free "Light Gray Canvas" tiles — no API key or account needed, and none of the steps above touch a third-party service beyond that.
 
 ## Command-line usage (no interactive collector)
 
@@ -38,7 +56,13 @@ Open **http://127.0.0.1:5000**, click anywhere on the map, pick a category and h
 ./.venv/bin/python heatmap.py --input data/locations.csv --output output/tehran_life_heatmap.html
 ```
 
+On Windows, use `.venv\Scripts\python` instead of `./.venv/bin/python`.
+
 Add `--skip-geocode` if every row already has `lat`/`lon` filled in (otherwise addresses are resolved via OpenStreetMap Nominatim and the coordinates are cached back into the CSV).
+
+## Sharing your heatmap
+
+On the full standalone map (open it from the collector page, or run the CLI above), a **"Download shareable image"** button in the bottom-right renders a single high-resolution PNG — the map plus a title/description card — sized for posting on social media. It needs the app running (`python app.py`) since rendering happens server-side; opened as a bare file it'll tell you so instead of failing silently. The first render for a given map extent fetches basemap tiles fresh (a few seconds); after that they're cached locally (`.tile_cache/`, git-ignored) and it's near-instant.
 
 ## Your data stays yours
 
@@ -47,12 +71,13 @@ Add `--skip-geocode` if every row already has `lat`/`lon` filled in (otherwise a
 ## Project structure
 
 ```
-heatmap.py                  Core model: familiarity math, density grid, PNG/HTML rendering, CLI
+heatmap.py                  Core model: familiarity math, density grid, PNG/HTML/share-image rendering, CLI
 app.py                      Flask backend for the interactive collector
 templates/index.html        Click-to-add map UI (Leaflet)
 data/locations.example.csv  Synthetic demo dataset (tracked)
 data/locations.csv          Your real places (git-ignored, created on first save)
 output/                     Generated heatmaps (git-ignored)
+.tile_cache/                Cached basemap tiles for the share-image export (git-ignored)
 docs/demo_heatmap.png       README screenshot, built from the example dataset
 ```
 
@@ -62,7 +87,7 @@ Everything here is Tehran-flavored by default (`TEHRAN_CENTER` in `heatmap.py`),
 
 ## Requirements
 
-Python 3.10+, and the packages in `requirements.txt` (Flask, pandas, numpy, folium, matplotlib, geopy).
+Python 3.10+, and the packages in `requirements.txt` (Flask, pandas, numpy, folium, matplotlib, geopy, requests, Pillow).
 
 ## License
 

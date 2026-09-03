@@ -11,17 +11,28 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
+import io
+import math
 import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests
 import folium
 import matplotlib
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 
 TEHRAN_CENTER = (35.6892, 51.3890)
+
+BASE_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+REFERENCE_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+SHARE_CARD_BG = "#efe0c4"
+SHARE_TITLE_COLOR = "#2b2622"
+SHARE_BODY_COLOR = "#8a5a2b"
+TILE_CACHE_DIR = Path(__file__).resolve().parent / ".tile_cache"
 
 HOURS_PER_UNIT = {
     "hours": 1,
@@ -193,9 +204,190 @@ def render_overlay_png(intensity_grid: np.ndarray, out_path: Path):
     plt.imsave(out_path, rgba)
 
 
+def _deg_to_tile(lat: float, lon: float, zoom: int):
+    lat_rad = math.radians(lat)
+    n = 2 ** zoom
+    x = (lon + 180.0) / 360.0 * n
+    y = (1.0 - math.log(math.tan(lat_rad) + 1 / math.cos(lat_rad)) / math.pi) / 2.0 * n
+    return x, y
+
+
+def _choose_tile_zoom(bounds, max_tiles: int = 180, max_zoom: int = 16) -> int:
+    south, west, north, east = bounds
+    for zoom in range(max_zoom, 0, -1):
+        x0, y0 = _deg_to_tile(north, west, zoom)
+        x1, y1 = _deg_to_tile(south, east, zoom)
+        n_tiles = (abs(x1 - x0) + 1) * (abs(y1 - y0) + 1)
+        if n_tiles <= max_tiles:
+            return zoom
+    return 1
+
+
+def _fetch_tile_bytes(url: str, cache_path: Path) -> bytes:
+    if cache_path.exists():
+        return cache_path.read_bytes()
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(resp.content)
+    return resp.content
+
+
+def _fetch_tile_mosaic(bounds, tile_url: str, layer_name: str, zoom: int, tile_size: int = 256):
+    """Fetch and stitch the map tiles covering `bounds`, then crop precisely
+    to it -- the same tiles the live Leaflet map already renders, just
+    assembled server-side into one static image. Tiles are fetched
+    concurrently (the network round-trip, not bandwidth, is what makes this
+    slow) and cached to disk, so re-rendering the same extent is instant."""
+    from PIL import Image
+
+    south, west, north, east = bounds
+    x0f, y0f = _deg_to_tile(north, west, zoom)
+    x1f, y1f = _deg_to_tile(south, east, zoom)
+    x0, x1 = int(math.floor(min(x0f, x1f))), int(math.floor(max(x0f, x1f)))
+    y0, y1 = int(math.floor(min(y0f, y1f))), int(math.floor(max(y0f, y1f)))
+
+    def fetch_one(coord):
+        xt, yt = coord
+        cache_path = TILE_CACHE_DIR / layer_name / str(zoom) / f"{xt}_{yt}.tile"
+        try:
+            data = _fetch_tile_bytes(tile_url.format(z=zoom, x=xt, y=yt), cache_path)
+            return coord, Image.open(io.BytesIO(data)).convert("RGBA")
+        except Exception:
+            return coord, Image.new("RGBA", (tile_size, tile_size), (0, 0, 0, 0))
+
+    coords = [(xt, yt) for xt in range(x0, x1 + 1) for yt in range(y0, y1 + 1)]
+    mosaic = Image.new("RGBA", ((x1 - x0 + 1) * tile_size, (y1 - y0 + 1) * tile_size))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        for (xt, yt), tile_img in pool.map(fetch_one, coords):
+            mosaic.paste(tile_img, ((xt - x0) * tile_size, (yt - y0) * tile_size))
+
+    crop_box = (
+        (x0f - x0) * tile_size, (y0f - y0) * tile_size,
+        (x1f - x0) * tile_size, (y1f - y0) * tile_size,
+    )
+    return mosaic.crop(crop_box)
+
+
+def _wrap_text(draw, text: str, font, max_width: int) -> list[str]:
+    lines, current = [], ""
+    for word in text.split():
+        trial = f"{current} {word}".strip()
+        if draw.textlength(trial, font=font) <= max_width:
+            current = trial
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def render_share_image(df: pd.DataFrame, bounds, overlay_png: Path, out_path: Path,
+                        title: str = "My Life Familiarity Map — Tehran", description: str | None = None):
+    """A single self-contained, high-resolution PNG (basemap + heat glow +
+    title/description/legend caption) meant for sharing outside the app --
+    social media, messaging, printing -- where an interactive Leaflet page
+    doesn't work."""
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+    zoom = _choose_tile_zoom(bounds)
+    base = _fetch_tile_mosaic(bounds, BASE_TILE_URL, "base", zoom)
+    reference = _fetch_tile_mosaic(bounds, REFERENCE_TILE_URL, "reference", zoom)
+    basemap = Image.alpha_composite(base, reference)
+
+    overlay = Image.open(overlay_png).convert("RGBA").resize(basemap.size, Image.LANCZOS)
+    combined = Image.alpha_composite(basemap, overlay).convert("RGB")
+
+    # Upscale small extents so the export still reads as "HQ" at social-media sizes.
+    min_width = 1600
+    if combined.width < min_width:
+        scale = min_width / combined.width
+        combined = combined.resize((round(combined.width * scale), round(combined.height * scale)), Image.LANCZOS)
+
+    map_w, map_h = combined.size
+    font_dir = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
+
+    # Attribution sits in the map's top-right corner (Esri's free tiles
+    # require it to stay visible somewhere) -- kept up there, away from the
+    # caption card, so the two never fight for space.
+    draw = ImageDraw.Draw(combined, "RGBA")
+    attr_font = ImageFont.truetype(str(font_dir / "DejaVuSans.ttf"), size=round(map_w * 0.011))
+    attribution = "Esri, HERE, Garmin, OpenStreetMap contributors"
+    attr_pad = round(map_w * 0.01)
+    attr_h = round(map_w * 0.026)
+    attr_w = draw.textlength(attribution, font=attr_font)
+    draw.rectangle([map_w - attr_w - 2 * attr_pad, 0, map_w, attr_h], fill=(255, 255, 255, 170))
+    draw.text((map_w - attr_w - attr_pad, round(attr_h * 0.28)), attribution, font=attr_font, fill="#4a463f")
+
+    # The caption is a full-width, square-edged bar that overlaps the
+    # bottom edge of the map slightly, sized to fit its own text (title +
+    # up to two description lines).
+    inner_pad = round(map_w * 0.045)
+
+    title_font = ImageFont.truetype(str(font_dir / "DejaVuSerif-Bold.ttf"), size=round(map_w * 0.034))
+    body_font = ImageFont.truetype(str(font_dir / "DejaVuSerif.ttf"), size=round(map_w * 0.022))
+
+    dummy_draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    max_text_w = map_w - 2 * inner_pad
+    while title_font.size > 14 and dummy_draw.textlength(title, font=title_font) > max_text_w:
+        title_font = ImageFont.truetype(str(font_dir / "DejaVuSerif-Bold.ttf"), size=title_font.size - 2)
+
+    if description is None:
+        description = f"{len(df)} places I've lived, worked, traveled to, and visited around Tehran."
+    desc_lines = _wrap_text(dummy_draw, description, body_font, max_text_w)[:2]
+
+    title_h = round(title_font.size * 1.3)
+    line_h = round(body_font.size * 1.4)
+    gap = round(map_w * 0.014)
+    content_h = title_h + gap + len(desc_lines) * line_h
+    card_h = content_h + 2 * inner_pad
+    overlap = round(card_h * 0.3)
+
+    canvas = Image.new("RGB", (map_w, map_h + card_h - overlap), SHARE_CARD_BG)
+    canvas.paste(combined, (0, 0))
+    card_box = (0, map_h - overlap, map_w, map_h - overlap + card_h)
+
+    shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rectangle(
+        [0, card_box[1] + round(map_w * 0.01), map_w, card_box[1] + round(map_w * 0.05)],
+        fill=(0, 0, 0, 100),
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(round(map_w * 0.015)))
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), shadow).convert("RGB")
+
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle(card_box, fill=SHARE_CARD_BG)
+
+    text_left = inner_pad
+    y = card_box[1] + inner_pad
+    draw.text((text_left, y), title, font=title_font, fill=SHARE_TITLE_COLOR)
+    y += title_h + gap
+    for line in desc_lines:
+        draw.text((text_left, y), line, font=body_font, fill=SHARE_BODY_COLOR)
+        y += line_h
+
+    canvas.save(out_path)
+
+
 def build_map(df: pd.DataFrame, overlay_png: Path, bounds, out_html: Path):
     south, west, north, east = bounds
-    m = folium.Map(location=TEHRAN_CENTER, zoom_start=12, tiles="CartoDB positron")
+    m = folium.Map(
+        location=TEHRAN_CENTER,
+        zoom_start=12,
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
+        max_zoom=16,
+    )
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="labels",
+        overlay=True,
+        control=False,
+        max_zoom=16,
+    ).add_to(m)
 
     folium.raster_layers.ImageOverlay(
         image=str(overlay_png),
@@ -221,6 +413,73 @@ def build_map(df: pd.DataFrame, overlay_png: Path, bounds, out_html: Path):
             fill_opacity=0.001,
             popup=folium.Popup(popup, max_width=250),
         ).add_to(m)
+
+    # "Download shareable image" only works when this page is served by the
+    # Flask app (app.py) -- /api/share_image is one of its routes. Opened
+    # standalone (double-clicked, no server) the button explains that
+    # instead of silently failing.
+    m.get_root().html.add_child(folium.Element("""
+    <style>
+      #share-img-wrap { position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+        text-align: right; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+      #share-img-btn { display: inline-flex; align-items: center; gap: 9px;
+        background: #d7301f; color: #fff; border: none; padding: 13px 22px;
+        border-radius: 999px; font-size: 14.5px; font-weight: 600; letter-spacing: .2px;
+        cursor: pointer; box-shadow: 0 4px 14px rgba(215,48,31,.4);
+        transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
+      #share-img-btn:hover:not(:disabled) { background: #c22a1c;
+        box-shadow: 0 6px 18px rgba(215,48,31,.5); transform: translateY(-1px); }
+      #share-img-btn:active:not(:disabled) { transform: translateY(0); }
+      #share-img-btn:disabled { background: #b0aaa2; box-shadow: none; cursor: default; }
+      #share-img-btn .spinner { width: 14px; height: 14px; border-radius: 50%;
+        border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+        animation: share-spin .7s linear infinite; display: none; }
+      #share-img-btn.loading .spinner { display: inline-block; }
+      #share-img-btn.loading .icon { display: none; }
+      @keyframes share-spin { to { transform: rotate(360deg); } }
+      #share-img-status { display: none; margin-top: 8px; font-size: 12.5px; line-height: 1.4;
+        max-width: 260px; color: #2b2622; background: #fffaf3; padding: 8px 12px;
+        border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); text-align: left; }
+    </style>
+    <div id="share-img-wrap">
+      <button id="share-img-btn">
+        <span class="icon">\U0001F4F8</span><span class="spinner"></span>
+        <span class="label">Download shareable image</span>
+      </button>
+      <div id="share-img-status"></div>
+    </div>
+    <script>
+    document.getElementById('share-img-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('share-img-btn');
+      const label = btn.querySelector('.label');
+      const status = document.getElementById('share-img-status');
+      btn.disabled = true;
+      btn.classList.add('loading');
+      label.textContent = 'Rendering…';
+      status.style.display = 'none';
+      try {
+        const res = await fetch('/api/share_image');
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'server error');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'tehran_life_heatmap_share.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        status.textContent = 'Could not reach the app server — run "python app.py" and open this page from there (not as a local file) to use this button.';
+        status.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+        label.textContent = 'Download shareable image';
+      }
+    });
+    </script>
+    """))
 
     m.save(str(out_html))
 
