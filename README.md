@@ -22,39 +22,17 @@ These ranges are an informed heuristic (grounded in pedestrian-catchment/"pedshe
 
 ## Getting started
 
-This section assumes no prior setup — if you already have Python and Git, skip to [Install and run](#install-and-run).
+Requires **Python 3.10+**. Check with `python3 --version` (Windows: `python --version`).
 
-### What you'll need
+- **Windows**: get it from [python.org/downloads](https://www.python.org/downloads/) — tick **"Add python.exe to PATH"** on the installer's first screen, easy to miss and needed for the commands below to work.
+- **macOS**: get it from [python.org/downloads](https://www.python.org/downloads/) (the built-in `python` is an old Python 2 — this needs 3.10+, hence `python3` below).
+- **Linux**: usually already installed; otherwise `sudo apt install python3 python3-venv` (Ubuntu/Debian) or your distro's equivalent.
 
-This is a program you run on your own computer (it's not a website) — you'll need two things installed first: **Python** (the language it's written in) and, ideally, **Git** (a tool for downloading code from GitHub — though you can skip it and just download a ZIP instead, see below). Both are free. Everything below is done in your computer's **terminal** — a text-based window for typing commands instead of clicking. That's normal for a project like this one; you don't need to know anything about it beyond copy-pasting the commands shown.
-
-#### 1. Install Python (if you don't have it)
-
-Check first — open a terminal (see "Opening a terminal" below) and type `python3 --version` (Windows: `python --version`). If it prints `Python 3.10` or higher, you're set and can skip ahead.
-
-- **Windows**: download the installer from [python.org/downloads](https://www.python.org/downloads/). While installing, make sure to tick **"Add python.exe to PATH"** on the first screen — easy to miss, and without it the commands below won't work.
-- **macOS**: download the installer from [python.org/downloads](https://www.python.org/downloads/). (macOS ships with an old Python 2 as `python` — this project needs 3.10+, hence `python3` in the commands below.)
-- **Linux**: almost always already installed. If not, install it with your distro's package manager, e.g. `sudo apt install python3 python3-venv` on Ubuntu/Debian.
-
-#### 2. Opening a terminal
-
-- **Windows**: press the Start key, type `PowerShell`, press Enter.
-- **macOS**: press `Cmd+Space`, type `Terminal`, press Enter.
-- **Linux**: usually `Ctrl+Alt+T`, or search "Terminal" in your applications menu.
-
-#### 3. Get the code
-
-**With Git** (if you have it, or want it — installers at [git-scm.com/downloads](https://git-scm.com/downloads)):
+No Git? On this repo's GitHub page, **Code → Download ZIP**, unzip it, then `cd` into that folder instead of `git clone`ing.
 
 ```bash
 git clone <this-repo-url>
 cd life-heatmap
-```
-
-**Without Git** — on this repository's GitHub page, click the green **Code** button → **Download ZIP**, then unzip it anywhere. In the terminal, `cd` into the folder you unzipped (drag the folder into the terminal window after typing `cd ` — most terminals will fill in the path for you), e.g.:
-
-```bash
-cd Downloads/life-heatmap-main
 ```
 
 ### Install and run
