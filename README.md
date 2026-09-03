@@ -22,23 +22,56 @@ These ranges are an informed heuristic (grounded in pedestrian-catchment/"pedshe
 
 ## Getting started
 
-Requires **Python 3.10+**. Pick your OS below.
+This section assumes no prior setup — if you already have Python and Git, skip to [Install and run](#install-and-run).
 
-### Linux / macOS
+### What you'll need
+
+This is a program you run on your own computer (it's not a website) — you'll need two things installed first: **Python** (the language it's written in) and, ideally, **Git** (a tool for downloading code from GitHub — though you can skip it and just download a ZIP instead, see below). Both are free. Everything below is done in your computer's **terminal** — a text-based window for typing commands instead of clicking. That's normal for a project like this one; you don't need to know anything about it beyond copy-pasting the commands shown.
+
+#### 1. Install Python (if you don't have it)
+
+Check first — open a terminal (see "Opening a terminal" below) and type `python3 --version` (Windows: `python --version`). If it prints `Python 3.10` or higher, you're set and can skip ahead.
+
+- **Windows**: download the installer from [python.org/downloads](https://www.python.org/downloads/). While installing, make sure to tick **"Add python.exe to PATH"** on the first screen — easy to miss, and without it the commands below won't work.
+- **macOS**: download the installer from [python.org/downloads](https://www.python.org/downloads/). (macOS ships with an old Python 2 as `python` — this project needs 3.10+, hence `python3` in the commands below.)
+- **Linux**: almost always already installed. If not, install it with your distro's package manager, e.g. `sudo apt install python3 python3-venv` on Ubuntu/Debian.
+
+#### 2. Opening a terminal
+
+- **Windows**: press the Start key, type `PowerShell`, press Enter.
+- **macOS**: press `Cmd+Space`, type `Terminal`, press Enter.
+- **Linux**: usually `Ctrl+Alt+T`, or search "Terminal" in your applications menu.
+
+#### 3. Get the code
+
+**With Git** (if you have it, or want it — installers at [git-scm.com/downloads](https://git-scm.com/downloads)):
 
 ```bash
 git clone <this-repo-url>
 cd life-heatmap
+```
+
+**Without Git** — on this repository's GitHub page, click the green **Code** button → **Download ZIP**, then unzip it anywhere. In the terminal, `cd` into the folder you unzipped (drag the folder into the terminal window after typing `cd ` — most terminals will fill in the path for you), e.g.:
+
+```bash
+cd Downloads/life-heatmap-main
+```
+
+### Install and run
+
+Pick your OS:
+
+**Linux / macOS**
+
+```bash
 python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python app.py
 ```
 
-### Windows (PowerShell or cmd)
+**Windows (PowerShell or cmd)**
 
 ```powershell
-git clone <this-repo-url>
-cd life-heatmap
 py -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 .venv\Scripts\python app.py
@@ -46,7 +79,9 @@ py -m venv .venv
 
 (If `py` isn't found, use `python` instead — depends on how Python was installed.)
 
-Either way, open **http://127.0.0.1:5000**, click anywhere on the map, pick a category and how long you were there, and save. A live dashed circle previews the exact radius before you commit. Hit **Generate Heatmap** any time to render the current glow over the map, or open the full standalone version it links to.
+The middle line downloads this project's dependencies into a private folder (`.venv`) inside the project — it doesn't touch anything else on your system, and re-running it is safe. It only needs to be run once; after that, you can just re-run the last line (`app.py`) each time you want to use the app.
+
+Once it's running, open **http://127.0.0.1:5000** in your browser, click anywhere on the map, pick a category and how long you were there, and save. A live dashed circle previews the exact radius before you commit. Hit **Generate Heatmap** any time to render the current glow over the map, or open the full standalone version it links to. To stop the app, go back to the terminal and press `Ctrl+C`.
 
 The basemap (streets, place labels) is served live by Esri's free "Light Gray Canvas" tiles — no API key or account needed, and none of the steps above touch a third-party service beyond that.
 
