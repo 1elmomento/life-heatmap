@@ -1,0 +1,33 @@
+{
+  "_comment": "Single source of truth for the familiarity model. Read by heatmap.py (json.load) and by the web app in docs/ (fetch). Tune a number here and both the Python CLI and the browser version change together. See README for what each parameter means.",
+
+  "hours_per_unit": {
+    "hours": 1,
+    "days": 24,
+    "months": 720,
+    "years": 8760
+  },
+
+  "category_params": {
+    "lived":      { "r_min": 250, "r_max": 1200, "tau_hours": 8760, "i_min": 0.65, "i_max": 0.97 },
+    "frequented": { "r_min": 150, "r_max": 700,  "tau_hours": 7200, "i_min": 0.50, "i_max": 0.85 },
+    "traveled":   { "r_min": 150, "r_max": 500,  "tau_hours": 48,   "i_min": 0.35, "i_max": 0.65 },
+    "visited":    { "r_min": 80,  "r_max": 350,  "tau_hours": 4320, "i_min": 0.45, "i_max": 0.78 },
+    "guest":      { "r_min": 40,  "r_max": 120,  "tau_hours": 6,    "i_min": 0.30, "i_max": 0.48 }
+  },
+
+  "category_color": {
+    "lived": "#d7301f",
+    "frequented": "#2b8cbe",
+    "traveled": "#41ab5d",
+    "visited": "#fc8d59",
+    "guest": "#8a8a8a"
+  },
+
+  "grid_resolution": 450,
+  "alpha_gamma": 0.6,
+  "alpha_floor": 0.03,
+
+  "default_center": [35.6892, 51.389],
+  "default_zoom": 12
+}

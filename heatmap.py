@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import concurrent.futures
 import io
 import math
@@ -25,8 +26,6 @@ import matplotlib
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 
-TEHRAN_CENTER = (35.6892, 51.3890)
-
 BASE_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
 REFERENCE_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
 SHARE_CARD_BG = "#efe0c4"
@@ -34,12 +33,29 @@ SHARE_TITLE_COLOR = "#2b2622"
 SHARE_BODY_COLOR = "#8a5a2b"
 TILE_CACHE_DIR = Path(__file__).resolve().parent / ".tile_cache"
 
-HOURS_PER_UNIT = {
-    "hours": 1,
-    "days": 24,
-    "months": 24 * 30,
-    "years": 24 * 365,
-}
+# Lives inside docs/ because GitHub Pages serves that folder as the web app's
+# site root -- the browser version can only fetch files from in there. Keeping
+# the single copy there (rather than a duplicate up here) is what stops the
+# Python model and the JavaScript one from drifting apart.
+MODEL_PARAMS_PATH = Path(__file__).resolve().parent / "docs" / "model_params.json"
+
+
+def load_model_params(path: Path = MODEL_PARAMS_PATH) -> dict:
+    """The model's constants live in model_params.json rather than in this file so
+    that this CLI and the browser version in docs/ read the same numbers -- tune a
+    radius or a tau once and both change together."""
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+MODEL = load_model_params()
+
+# Where the interactive map opens before you pan somewhere else. Rendered output
+# (heat grid, snapshot bounds) is centered on your own points, not on this.
+DEFAULT_CENTER = tuple(MODEL["default_center"])
+TEHRAN_CENTER = DEFAULT_CENTER  # kept as an alias: app.py imports this name
+
+HOURS_PER_UNIT = MODEL["hours_per_unit"]
 
 # Familiarity grows fast at first, then plateaus with more exposure -- a
 # saturating exponential rather than open-ended growth, which is the shape
@@ -73,27 +89,16 @@ HOURS_PER_UNIT = {
 #   exposure there is.
 #
 # These are an informed heuristic, not a measured constant -- tune freely.
-CATEGORY_PARAMS = {
-    "lived":      {"r_min": 250, "r_max": 1200, "tau_hours": 24 * 365, "i_min": 0.65, "i_max": 0.97},
-    "frequented": {"r_min": 150, "r_max": 700,  "tau_hours": 24 * 300, "i_min": 0.50, "i_max": 0.85},
-    "traveled":   {"r_min": 150, "r_max": 500,  "tau_hours": 24 * 2,   "i_min": 0.35, "i_max": 0.65},
-    "visited":    {"r_min": 80,  "r_max": 350,  "tau_hours": 24 * 180, "i_min": 0.45, "i_max": 0.78},
-    "guest":      {"r_min": 40,  "r_max": 120,  "tau_hours": 6,        "i_min": 0.30, "i_max": 0.48},
-}
+# The numbers themselves are in model_params.json.
+CATEGORY_PARAMS = MODEL["category_params"]
 
 # Colors used both for the popup hit-target radius and (indirectly, via the
 # category contrast) how visible each category stays once zoomed out.
-CATEGORY_COLOR = {
-    "lived": "#d7301f",
-    "frequented": "#2b8cbe",
-    "traveled": "#41ab5d",
-    "visited": "#fc8d59",
-    "guest": "#8a8a8a",
-}
+CATEGORY_COLOR = MODEL["category_color"]
 
-GRID_RESOLUTION = 450
-ALPHA_GAMMA = 0.6   # <1 boosts faint areas so low-familiarity spots stay visible when zoomed out
-ALPHA_FLOOR = 0.03  # intensities below this render fully transparent
+GRID_RESOLUTION = MODEL["grid_resolution"]
+ALPHA_GAMMA = MODEL["alpha_gamma"]    # <1 boosts faint areas so low-familiarity spots stay visible when zoomed out
+ALPHA_FLOOR = MODEL["alpha_floor"]    # intensities below this render fully transparent
 
 
 def familiarity(category: str, duration_value: float, duration_unit: str) -> tuple[float, float]:
@@ -166,7 +171,11 @@ def compute_weights(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_density_grid(df: pd.DataFrame):
-    lat0, lon0 = TEHRAN_CENTER
+    # Project from the centroid of the points themselves. The equirectangular
+    # x-scale carries a cos(lat0) term, so a fixed origin only stays accurate
+    # near that latitude -- anchoring it at Tehran (35.7N) squashed east-west
+    # radii by ~25% for a dataset in Amsterdam or Berlin (52N).
+    lat0, lon0 = float(df["lat"].mean()), float(df["lon"].mean())
     px, py = project_meters(df["lat"].values, df["lon"].values, lat0, lon0)
 
     pad = df["sigma_m"].max() * 3.5
@@ -285,7 +294,7 @@ def _wrap_text(draw, text: str, font, max_width: int) -> list[str]:
 
 
 def render_share_image(df: pd.DataFrame, bounds, overlay_png: Path, out_path: Path,
-                        title: str = "My Life Familiarity Map — Tehran", description: str | None = None):
+                        title: str = "My Life Familiarity Map", description: str | None = None):
     """A single self-contained, high-resolution PNG (basemap + heat glow +
     title/description/legend caption) meant for sharing outside the app --
     social media, messaging, printing -- where an interactive Leaflet page
@@ -335,7 +344,7 @@ def render_share_image(df: pd.DataFrame, bounds, overlay_png: Path, out_path: Pa
         title_font = ImageFont.truetype(str(font_dir / "DejaVuSerif-Bold.ttf"), size=title_font.size - 2)
 
     if description is None:
-        description = f"{len(df)} places I've lived, worked, traveled to, and visited around Tehran."
+        description = f"{len(df)} places I've lived, worked, traveled to, and visited."
     desc_lines = _wrap_text(dummy_draw, description, body_font, max_text_w)[:2]
 
     title_h = round(title_font.size * 1.3)
@@ -374,7 +383,7 @@ def render_share_image(df: pd.DataFrame, bounds, overlay_png: Path, out_path: Pa
 def build_map(df: pd.DataFrame, overlay_png: Path, bounds, out_html: Path):
     south, west, north, east = bounds
     m = folium.Map(
-        location=TEHRAN_CENTER,
+        location=[(south + north) / 2, (west + east) / 2],
         zoom_start=12,
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
         attr="Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
@@ -388,6 +397,7 @@ def build_map(df: pd.DataFrame, overlay_png: Path, bounds, out_html: Path):
         control=False,
         max_zoom=16,
     ).add_to(m)
+    m.fit_bounds([[south, west], [north, east]])
 
     folium.raster_layers.ImageOverlay(
         image=str(overlay_png),
