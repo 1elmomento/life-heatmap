@@ -6,7 +6,7 @@ A personal familiarity map: click places you've lived, frequented, traveled to, 
 
 *(Demo image generated from the synthetic `data/locations.example.csv` — no real personal data is included in this repo.)*
 
-**[→ Open the web version](https://YOUR-USERNAME.github.io/life-heatmap/)** — no install, nothing to sign up for, and your places never leave your browser.
+**[→ Open the web version](https://1elmomento.github.io/life-heatmap/)** — no install, nothing to sign up for, and your places never leave your browser.
 
 ## How it works
 
@@ -56,9 +56,9 @@ The web app is plain HTML, CSS and JavaScript — no build step, no server. To p
 1. Push this repo to GitHub (it must be a public repo, on a free account).
 2. Go to **Settings → Pages**.
 3. Under "Build and deployment", set **Source** to *Deploy from a branch*, then pick branch `main` and folder **`/docs`**. Save.
-4. Wait about a minute. Your site appears at `https://YOUR-USERNAME.github.io/life-heatmap/`.
+4. Wait about a minute. Your site appears at `https://1elmomento.github.io/life-heatmap/`.
 
-Every later `git push` redeploys it. Update the link at the top of this README to your own URL.
+Every later `git push` redeploys it.
 
 Nothing is running on GitHub's side — it just hands the files to whoever visits, and the map is built in their browser. That's also why there's no shared database: each visitor's places are stored only in their own browser, invisible to you and to everyone else.
 
