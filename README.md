@@ -6,6 +6,8 @@ A personal familiarity map: click places you've lived, frequented, traveled to, 
 
 *(Demo image generated from the synthetic `data/locations.example.csv` — no real personal data is included in this repo.)*
 
+**[→ Open the web version](https://YOUR-USERNAME.github.io/life-heatmap/)** — no install, nothing to sign up for, and your places never leave your browser.
+
 ## How it works
 
 Instead of a generic "distance decay" heatmap, each point's glow radius and color intensity come from a small model of how spatial familiarity actually builds up: fast at first, then leveling off with more exposure (a saturating exponential — the shape spatial-cognition research uses for how people build a mental map of a place), with different ceilings depending on *how* you were exposed to it.
@@ -18,9 +20,49 @@ Instead of a generic "distance decay" heatmap, each point's glow radius and colo
 | **Visited** | 80m → 350m | ~6 months | Repeat point-to-point trips to one destination — a friend's place, a regular café. |
 | **Guest** | 40m → 120m | ~6 hours | A one-off visit of a few hours — familiarity never leaves the venue. |
 
-These ranges are an informed heuristic (grounded in pedestrian-catchment/"pedshed" urban planning standards and spatial-knowledge-acquisition research), not a measured constant — tune them freely in `heatmap.py`'s `CATEGORY_PARAMS`.
+These ranges are an informed heuristic (grounded in pedestrian-catchment/"pedshed" urban planning standards and spatial-knowledge-acquisition research), not a measured constant — tune them freely in **`docs/model_params.json`**.
 
-## Getting started
+That one file is the model. Both the web app and the Python code read it, so changing a radius there changes both and they can't drift apart. (It lives inside `docs/` because that's the folder GitHub Pages serves as the website root — the browser can only fetch files from in there.)
+
+## Three ways to use it
+
+| | Runs where | Your data lives | Good for |
+|---|---|---|---|
+| **Web app** (`docs/`) | Any browser, nothing installed | That browser's local storage | Everyday use, and sharing the link with people |
+| **Flask collector** (`app.py`) | Your machine, `localhost:5000` | `data/locations.csv` | Wanting your places in a real file you can edit by hand |
+| **CLI** (`heatmap.py`) | Your machine, terminal | Whatever CSV you point it at | Scripting, batch runs, tweaking the rendering |
+
+All three produce the same map, because they share the same model.
+
+## The web app
+
+Open the link above, or run it locally:
+
+```bash
+cd docs
+python3 -m http.server
+```
+
+then open <http://localhost:8000>. (Opening `docs/index.html` straight off disk won't work — browsers refuse to let a `file://` page read `model_params.json`. Any static file server is fine.)
+
+The map opens on Tehran; pan to your own city, or type it in the search box at the top right. Click anywhere to add a place, pick a category and how long you were there, and a dashed circle previews the exact glow radius before you save. **Generate Heatmap** renders the glow over the map, and **Download shareable image** produces a single high-resolution PNG with a caption card, sized for posting.
+
+**Export** saves your places as a CSV using the same columns as `data/locations.csv` — so a file exported from the browser feeds straight into the Python CLI, and vice versa.
+
+### Publishing your own copy to GitHub Pages
+
+The web app is plain HTML, CSS and JavaScript — no build step, no server. To put your fork online for free:
+
+1. Push this repo to GitHub (it must be a public repo, on a free account).
+2. Go to **Settings → Pages**.
+3. Under "Build and deployment", set **Source** to *Deploy from a branch*, then pick branch `main` and folder **`/docs`**. Save.
+4. Wait about a minute. Your site appears at `https://YOUR-USERNAME.github.io/life-heatmap/`.
+
+Every later `git push` redeploys it. Update the link at the top of this README to your own URL.
+
+Nothing is running on GitHub's side — it just hands the files to whoever visits, and the map is built in their browser. That's also why there's no shared database: each visitor's places are stored only in their own browser, invisible to you and to everyone else.
+
+## The Flask collector and the CLI
 
 Requires **Python 3.10+**. Check with `python3 --version` (Windows: `python --version`).
 
@@ -36,8 +78,6 @@ cd life-heatmap
 ```
 
 ### Install and run
-
-Pick your OS:
 
 **Linux / macOS**
 
@@ -57,50 +97,49 @@ py -m venv .venv
 
 (If `py` isn't found, use `python` instead — depends on how Python was installed.)
 
-The middle line downloads this project's dependencies into a private folder (`.venv`) inside the project — it doesn't touch anything else on your system, and re-running it is safe. It only needs to be run once; after that, you can just re-run the last line (`app.py`) each time you want to use the app.
+The middle line downloads this project's dependencies into a private folder (`.venv`) inside the project — it doesn't touch anything else on your system, and re-running it is safe. It only needs to be run once; after that, just re-run the last line each time.
 
-Once it's running, open **http://127.0.0.1:5000** in your browser, click anywhere on the map, pick a category and how long you were there, and save. A live dashed circle previews the exact radius before you commit. Hit **Generate Heatmap** any time to render the current glow over the map, or open the full standalone version it links to. To stop the app, go back to the terminal and press `Ctrl+C`.
+Once it's running, open **http://127.0.0.1:5000**. Unlike the web app, this version auto-fills a street address for each point (via OpenStreetMap Nominatim) and writes to `data/locations.csv`. To stop it, press `Ctrl+C` in the terminal.
 
-The basemap (streets, place labels) is served live by Esri's free "Light Gray Canvas" tiles — no API key or account needed, and none of the steps above touch a third-party service beyond that.
-
-## Command-line usage (no interactive collector)
+### Command line only
 
 ```bash
-./.venv/bin/python heatmap.py --input data/locations.csv --output output/tehran_life_heatmap.html
+./.venv/bin/python heatmap.py --input data/locations.csv --output output/life_heatmap.html
 ```
 
 On Windows, use `.venv\Scripts\python` instead of `./.venv/bin/python`.
 
-Add `--skip-geocode` if every row already has `lat`/`lon` filled in (otherwise addresses are resolved via OpenStreetMap Nominatim and the coordinates are cached back into the CSV).
-
-## Sharing your heatmap
-
-On the full standalone map (open it from the collector page, or run the CLI above), a **"Download shareable image"** button in the bottom-right renders a single high-resolution PNG — the map plus a title/description card — sized for posting on social media. It needs the app running (`python app.py`) since rendering happens server-side; opened as a bare file it'll tell you so instead of failing silently. The first render for a given map extent fetches basemap tiles fresh (a few seconds); after that they're cached locally (`.tile_cache/`, git-ignored) and it's near-instant.
+Add `--skip-geocode` if every row already has `lat`/`lon` filled in (otherwise addresses are resolved via Nominatim and the coordinates are cached back into the CSV). Renders both a standalone interactive HTML map and the heat overlay PNG.
 
 ## Your data stays yours
 
-`data/locations.csv` (your real places) and `output/` (the maps generated from them) are both **git-ignored** — see `.gitignore`. The only location data tracked in this repo is `data/locations.example.csv`, a small synthetic dataset used to generate the demo image above. If you fork or clone this project, your own places never get committed unless you deliberately remove them from `.gitignore`.
+- **Web app**: places are held in your browser's local storage and nothing is ever uploaded. The page makes exactly two kinds of outbound request: basemap tiles from Esri, and — only when you press **Go** in the search box — one city lookup. Adding a place sends nothing.
+- **Python versions**: `data/locations.csv` (your real places) and `output/` are both **git-ignored**. The only location data tracked in this repo is `data/locations.example.csv`, a small synthetic dataset used for the demo image.
 
 ## Project structure
 
 ```
-heatmap.py                  Core model: familiarity math, density grid, PNG/HTML/share-image rendering, CLI
-app.py                      Flask backend for the interactive collector
-templates/index.html        Click-to-add map UI (Leaflet)
+docs/                       The web app — this folder is what GitHub Pages serves
+  index.html                Page and styles
+  app.js                    The model, the map UI, and the PNG export, in the browser
+  model_params.json         Shared model constants, read by the browser AND by Python
+  demo_heatmap.png          README screenshot
+heatmap.py                  Core model: familiarity math, density grid, rendering, CLI
+app.py                      Flask backend for the local collector
+templates/index.html        Click-to-add map UI for the Flask version (Leaflet)
 data/locations.example.csv  Synthetic demo dataset (tracked)
 data/locations.csv          Your real places (git-ignored, created on first save)
 output/                     Generated heatmaps (git-ignored)
-.tile_cache/                Cached basemap tiles for the share-image export (git-ignored)
-docs/demo_heatmap.png       README screenshot, built from the example dataset
+.tile_cache/                Cached basemap tiles for the CLI's share image (git-ignored)
 ```
 
 ## Using this for another city
 
-Everything here is Tehran-flavored by default (`TEHRAN_CENTER` in `heatmap.py`), but nothing in the model is Tehran-specific. Change that one constant to re-center the map anywhere else.
+Nothing in the model is city-specific. The web app opens wherever you last left it; `default_center` in `docs/model_params.json` sets where a first-time visitor starts. Rendered output — the heat grid, the map view, the shareable image — is always framed around your own points, wherever in the world they are.
 
 ## Requirements
 
-Python 3.10+, and the packages in `requirements.txt` (Flask, pandas, numpy, folium, matplotlib, geopy, requests, Pillow).
+For the web app: a browser. For the Python versions: Python 3.10+ and the packages in `requirements.txt` (Flask, pandas, numpy, folium, matplotlib, geopy, requests, Pillow).
 
 ## License
 

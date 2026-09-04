@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Life Heatmap — map the places you know</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Click the places you've lived, frequented, traveled to and visited, and get back a heatmap where each spot glows as wide as you actually know it. Runs entirely in your browser.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --ink: #2b2622;
+    --paper: #fffaf3;
+    --panel: #ffffff;
+    --border: #e8ded0;
+    --accent: #d7301f;
+    --muted: #8a8072;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); }
+  #app { display: flex; height: 100vh; }
+
+  /* ---------- sidebar ---------- */
+  #sidebar {
+    width: 320px; min-width: 320px; background: var(--paper);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden;
+  }
+  #sidebar header { padding: 18px 18px 12px; border-bottom: 1px solid var(--border); }
+  #sidebar header h1 { font-size: 17px; margin: 0 0 4px; }
+  #sidebar header p { font-size: 12.5px; color: #7a7266; margin: 0; line-height: 1.45; }
+  #privacy-note {
+    margin-top: 9px; font-size: 11.5px; color: #6f8a5f; background: #f2f7ee;
+    border: 1px solid #dfead6; border-radius: 7px; padding: 6px 9px; line-height: 1.4;
+  }
+
+  #loc-list { flex: 1; overflow-y: auto; padding: 8px 10px; }
+  .loc-card {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .loc-card:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,.07); }
+  .loc-info { flex: 1; min-width: 0; }
+  .loc-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .loc-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .loc-del { border: none; background: none; color: #b7ab99; cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  .loc-del:hover { color: var(--accent); }
+  .loc-badge {
+    width: 20px; height: 20px; border-radius: 50%; flex: none; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; font-weight: 700;
+  }
+  #empty-hint { padding: 24px 14px; color: #a89d8c; font-size: 13px; text-align: center; line-height: 1.5; }
+
+  #generate-bar { padding: 14px; border-top: 1px solid var(--border); }
+  #generate-btn {
+    width: 100%; padding: 12px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, #ef6a3c, #d7301f); color: white;
+    font-size: 14.5px; font-weight: 700; cursor: pointer; letter-spacing: .2px;
+  }
+  #generate-btn:disabled { opacity: .55; cursor: default; }
+  #generate-status { font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 16px; line-height: 1.4; }
+
+  .data-row { display: flex; gap: 6px; margin-top: 10px; }
+  .data-row button {
+    flex: 1; padding: 7px; border: 1px solid var(--border); background: #fff;
+    border-radius: 8px; font-size: 11.5px; color: #6b6355; cursor: pointer; font-family: inherit;
+  }
+  .data-row button:hover { border-color: #cdbfa9; color: var(--ink); }
+
+  /* ---------- map ---------- */
+  #map { flex: 1; position: relative; }
+  #map-canvas { position: absolute; inset: 0; }
+
+  #hint-banner {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(43,38,34,.88); color: #fff; padding: 8px 16px; border-radius: 20px;
+    font-size: 12.5px; z-index: 1000; box-shadow: 0 4px 14px rgba(0,0,0,.2); pointer-events: none;
+  }
+
+  #search-wrap { position: absolute; top: 14px; right: 14px; z-index: 1200; width: 260px; }
+  #search-form { display: flex; gap: 6px; }
+  #search-input {
+    flex: 1; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; font-family: inherit; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  }
+  #search-btn {
+    border: none; border-radius: 8px; background: var(--ink); color: #fff;
+    padding: 0 13px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+    box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  }
+  #search-btn:disabled { opacity: .6; cursor: default; }
+  #search-status {
+    display: none; margin-top: 6px; font-size: 11.5px; line-height: 1.4; color: #5c5548;
+    background: #fffaf3; border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px;
+  }
+
+  /* ---------- add-a-place form ---------- */
+  #form-panel {
+    position: absolute; z-index: 1300; width: 300px;
+    background: var(--panel); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.18);
+    border: 1px solid var(--border); padding: 16px; display: none;
+  }
+  #form-panel h3 { margin: 0 0 4px; font-size: 14px; }
+  #form-coords { font-size: 11px; color: #a89d8c; margin-bottom: 8px; }
+  #form-panel label { display: block; font-size: 11.5px; color: var(--muted); margin: 10px 0 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
+  #form-panel input[type=text], #form-panel input[type=number], #form-panel textarea {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; font-family: inherit;
+  }
+  #form-panel textarea { resize: vertical; min-height: 40px; }
+
+  .cat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .cat-btn {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 9px; border-radius: 8px; border: 1.5px solid var(--border);
+    background: #fff; cursor: pointer; font-size: 12px; text-align: left; font-family: inherit;
+  }
+  .cat-btn .swatch { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--cat-color); }
+  .cat-btn.active { border-color: var(--cat-color); background: color-mix(in srgb, var(--cat-color) 14%, white); }
+
+  .dur-row { display: flex; gap: 6px; }
+  .dur-row input { flex: 1.2; }
+  .dur-row select { flex: 1; border-radius: 7px; border: 1px solid var(--border); font-size: 13px; font-family: inherit; padding: 0 6px; }
+
+  #preview-readout {
+    margin-top: 10px; padding: 8px 10px; background: #f7f3ec; border-radius: 8px;
+    font-size: 11.5px; color: #5c5548; line-height: 1.5;
+  }
+  #preview-readout b { color: var(--ink); }
+
+  .form-actions { display: flex; gap: 8px; margin-top: 14px; }
+  #save-btn { flex: 1; padding: 9px; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
+  #cancel-btn { padding: 9px 12px; border: none; border-radius: 8px; background: #f1efec; color: #6b6355; font-size: 13px; cursor: pointer; font-family: inherit; }
+  #form-error { color: var(--accent); font-size: 11.5px; margin-top: 6px; min-height: 14px; }
+
+  .cat-marker {
+    width: 20px; height: 20px; border-radius: 50%; box-sizing: border-box;
+    border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; font-weight: 700; font-family: inherit;
+  }
+
+  /* ---------- share button ---------- */
+  #share-wrap { position: absolute; bottom: 20px; right: 20px; z-index: 1200; text-align: right; }
+  #share-btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    background: var(--accent); color: #fff; border: none; padding: 13px 22px;
+    border-radius: 999px; font-size: 14.5px; font-weight: 600; letter-spacing: .2px;
+    cursor: pointer; box-shadow: 0 4px 14px rgba(215,48,31,.4); font-family: inherit;
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  #share-btn:hover:not(:disabled) { background: #c22a1c; box-shadow: 0 6px 18px rgba(215,48,31,.5); transform: translateY(-1px); }
+  #share-btn:disabled { background: #b0aaa2; box-shadow: none; cursor: default; }
+  #share-btn .spinner {
+    width: 14px; height: 14px; border-radius: 50%; display: none;
+    border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; animation: spin .7s linear infinite;
+  }
+  #share-btn.loading .spinner { display: inline-block; }
+  #share-btn.loading .icon { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #share-status {
+    display: none; margin-top: 8px; font-size: 12.5px; line-height: 1.4; max-width: 280px;
+    color: var(--ink); background: #fffaf3; padding: 8px 12px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15); text-align: left;
+  }
+
+  /* ---------- share dialog ---------- */
+  #share-dialog { border: none; border-radius: 14px; padding: 0; max-width: 420px; width: 92vw; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  #share-dialog::backdrop { background: rgba(43,38,34,.45); }
+  #share-dialog .body { padding: 20px; }
+  #share-dialog h3 { margin: 0 0 4px; font-size: 15px; }
+  #share-dialog p { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  #share-dialog label { display: block; font-size: 11.5px; color: var(--muted); margin: 10px 0 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
+  #share-dialog input, #share-dialog textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 13px; font-family: inherit; resize: vertical;
+  }
+
+  @media (max-width: 720px) {
+    #app { flex-direction: column-reverse; }
+    #sidebar { width: 100%; min-width: 0; height: 45%; border-right: none; border-top: 1px solid var(--border); }
+    #map { height: 55%; }
+    #search-wrap { width: 190px; }
+    #form-panel { width: min(300px, 92vw); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <header>
+      <h1>Life Heatmap</h1>
+      <p>Click anywhere on the map to drop a place you've lived, frequented, traveled to, visited, or stopped by. The glow radius is calculated for you.</p>
+      <div id="privacy-note">Everything stays in this browser. No account, no server, nothing uploaded.</div>
+    </header>
+    <div id="loc-list"></div>
+    <div id="generate-bar">
+      <button id="generate-btn">Generate Heatmap</button>
+      <div id="generate-status"></div>
+      <div class="data-row">
+        <button id="export-btn" title="Save your places to a file">Export</button>
+        <button id="import-btn" title="Load places from a file">Import</button>
+        <button id="clear-btn" title="Remove every place">Clear</button>
+      </div>
+      <input type="file" id="import-file" accept=".json,.csv" hidden>
+    </div>
+  </div>
+
+  <div id="map">
+    <div id="map-canvas"></div>
+    <div id="hint-banner">Click the map to add a place</div>
+
+    <div id="search-wrap">
+      <form id="search-form">
+        <input type="text" id="search-input" placeholder="Jump to a city…" autocomplete="off">
+        <button type="submit" id="search-btn">Go</button>
+      </form>
+      <div id="search-status"></div>
+    </div>
+
+    <div id="form-panel">
+      <h3>New place</h3>
+      <div id="form-coords"></div>
+
+      <label for="f-name">Name</label>
+      <input type="text" id="f-name" placeholder="e.g. Grandma's house">
+
+      <label>How do you know it?</label>
+      <div class="cat-row" id="cat-row"></div>
+
+      <label for="f-dur">How long, in total?</label>
+      <div class="dur-row">
+        <input type="number" id="f-dur" min="0" step="any" value="1">
+        <select id="f-unit">
+          <option value="hours">hours</option>
+          <option value="days">days</option>
+          <option value="months">months</option>
+          <option value="years" selected>years</option>
+        </select>
+      </div>
+
+      <label for="f-notes">Notes (optional)</label>
+      <textarea id="f-notes" placeholder="anything you want to remember"></textarea>
+
+      <div id="preview-readout"></div>
+      <div id="form-error"></div>
+
+      <div class="form-actions">
+        <button id="save-btn">Save place</button>
+        <button id="cancel-btn">Cancel</button>
+      </div>
+    </div>
+
+    <div id="share-wrap">
+      <button id="share-btn">
+        <span class="icon">📸</span><span class="spinner"></span>
+        <span class="label">Download shareable image</span>
+      </button>
+      <div id="share-status"></div>
+    </div>
+  </div>
+</div>
+
+<dialog id="share-dialog">
+  <form method="dialog" class="body">
+    <h3>Title your map</h3>
+    <p>These appear on the caption card under the image.</p>
+    <label for="share-title">Title</label>
+    <input type="text" id="share-title" maxlength="80">
+    <label for="share-desc">Description</label>
+    <textarea id="share-desc" rows="2" maxlength="180"></textarea>
+    <div class="form-actions">
+      <button value="ok" id="share-go" style="flex:1;padding:9px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;">Render image</button>
+      <button value="cancel" style="padding:9px 12px;border:none;border-radius:8px;background:#f1efec;color:#6b6355;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
